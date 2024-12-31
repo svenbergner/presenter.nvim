@@ -41,7 +41,7 @@ local parse_slides = function(lines)
       end
 
       current_slide = {
-        title = line:sub(2),
+        title = line:sub(3),
         body = {},
         notes = {},
         tags = {},
