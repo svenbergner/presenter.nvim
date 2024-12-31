@@ -236,4 +236,6 @@ end
 
 M.start_presentation({ bufnr = 3 })
 
+M._parse_slides = parse_slides
+
 return M
