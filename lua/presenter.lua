@@ -11,10 +11,10 @@ M.setup = function()
   -- nothing
 end
 
----@class present.Slides
----@fields slides present.Slides[]: The slides of the file
+---@class presenter.Slides
+---@fields slides presenter.Slides[]: The slides of the file
 
---@class present.Slide
+--@class presenter.Slide
 --@field title string: The title of the slide
 --@field body string: The body of the slide
 --@field notes string: The notes of the slide
@@ -22,7 +22,7 @@ end
 
 --- Takes some lines and parses them
 ---@param lines string[]: The lines in the buffer
----@return present.Slides
+---@return presenter.Slides
 local parse_slides = function(lines)
   local slides = { slides = {} }
   local current_slide = {
