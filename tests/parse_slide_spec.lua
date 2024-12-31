@@ -9,8 +9,6 @@ describe("presenter.parse_slides", function()
         {
           title = '',
           body = {},
-          notes = {},
-          tags = {},
         }
       }
     }, parse({}))
@@ -22,8 +20,6 @@ describe("presenter.parse_slides", function()
         {
           title = "This is the first slide",
           body = { "This is the body" },
-          notes = {},
-          tags = {},
         }
       }
     }, parse({

@@ -17,8 +17,6 @@ end
 --@class presenter.Slide
 --@field title string: The title of the slide
 --@field body string: The body of the slide
---@field notes string: The notes of the slide
---@field tags string[]: The tags of the slide
 
 --- Takes some lines and parses them
 ---@param lines string[]: The lines in the buffer
@@ -28,8 +26,6 @@ local parse_slides = function(lines)
   local current_slide = {
     title = "",
     body = {},
-    notes = {},
-    tags = {},
   }
 
   local separator = "^#"
@@ -43,8 +39,6 @@ local parse_slides = function(lines)
       current_slide = {
         title = line:sub(3),
         body = {},
-        notes = {},
-        tags = {},
       }
     else
       table.insert(current_slide.body, line)
@@ -134,7 +128,7 @@ M.start_presentation = function(opts)
   local lines = vim.api.nvim_buf_get_lines(opts.bufnr, 0, -1, false)
   state.parsed = parse_slides(lines)
   state.current_slide = 1
-  state.current_file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(opts.bufnr),":t")
+  state.current_file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(opts.bufnr), ":t")
 
   local windows = create_window_configurations()
   state.floats.background = create_floating_window(windows.background)
@@ -171,7 +165,22 @@ M.start_presentation = function(opts)
     set_slide_content(state.current_slide)
   end)
 
+  presenter_keymap('n', '<CR>', function()
+    state.current_slide = math.min(state.current_slide + 1, #state.parsed.slides)
+    set_slide_content(state.current_slide)
+  end)
+
+  presenter_keymap('n', '<space>', function()
+    state.current_slide = math.min(state.current_slide + 1, #state.parsed.slides)
+    set_slide_content(state.current_slide)
+  end)
+
   presenter_keymap('n', 'p', function()
+    state.current_slide = math.max(state.current_slide - 1, 1)
+    set_slide_content(state.current_slide)
+  end)
+
+  presenter_keymap('n', '<BS>', function()
     state.current_slide = math.max(state.current_slide - 1, 1)
     set_slide_content(state.current_slide)
   end)
@@ -234,6 +243,7 @@ end
 --   "this is another thing",
 -- }))
 
+-- Remove comment for local testing
 M.start_presentation({ bufnr = 3 })
 
 M._parse_slides = parse_slides
