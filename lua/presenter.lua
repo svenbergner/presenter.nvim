@@ -14,9 +14,9 @@ end
 ---@class presenter.Slides
 ---@fields slides presenter.Slides[]: The slides of the file
 
---@class presenter.Slide
---@field title string: The title of the slide
---@field body string: The body of the slide
+---@class presenter.Slide
+---@field title string: The title of the slide
+---@field body string: The body of the slide
 
 --- Takes some lines and parses them
 ---@param lines string[]: The lines in the buffer
