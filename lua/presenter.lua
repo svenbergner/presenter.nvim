@@ -16,7 +16,12 @@ end
 
 ---@class presenter.Slide
 ---@field title string: The title of the slide
----@field body string: The body of the slide
+---@field body string[]: The body of the slide
+---@field blocks presenter.blocks[]: A codeblock inside of a slide
+
+---@class presenter.Block
+---@field language string: The language of the block
+---@field code string: The code inside of the block
 
 --- Takes some lines and parses them
 ---@param lines string[]: The lines in the buffer
@@ -26,6 +31,7 @@ local parse_slides = function(lines)
   local current_slide = {
     title = "",
     body = {},
+    blocks = {},
   }
 
   local separator = "^#"
@@ -39,6 +45,7 @@ local parse_slides = function(lines)
       current_slide = {
         title = line:sub(3),
         body = {},
+        blocks = {},
       }
     else
       table.insert(current_slide.body, line)
@@ -46,6 +53,31 @@ local parse_slides = function(lines)
   end
 
   table.insert(slides.slides, current_slide)
+
+  for _, slide in ipairs(slides.slides) do
+    local block = {
+      language = nil,
+      code = "",
+    }
+    local inside_block = false
+    for _, line in ipairs(slide.body) do
+      if line:find("^```") then
+        if inside_block then
+          inside_block = false
+          block.code = vim.trim(block.code)
+          table.insert(slide.blocks, block)
+        else
+          inside_block = true
+          block.language = line:sub(4)
+        end
+      else
+        if inside_block then
+          block.code = block.code .. line .. "\n"
+        end
+      end
+    end
+  end
+
   return slides
 end
 
@@ -188,6 +220,23 @@ M.start_presentation = function(opts)
   presenter_keymap('n', 'q', function()
     -- vim.api.nvim_win_close(state.floats.header.win, true)
     vim.api.nvim_win_close(state.floats.body.win, true)
+  end)
+
+  presenter_keymap('n', 'X', function()
+    local slide = state.parsed.slides[state.current_slide]
+    local block = slide.blocks[1]
+    if not block then
+      print("No code blocks on this page")
+      return
+    end
+    local code = block.code
+    local chunk = loadstring(code)
+    if not chunk then
+      print("Failed to load code block")
+      return
+    else 
+      chunk()
+    end
   end)
 
   local restore = {
