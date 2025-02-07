@@ -272,6 +272,7 @@ M.start_presentation = function(opts)
     vim.api.nvim_open_win(buf, true, {
       relative = "editor",
       style = "minimal",
+      noautocmd = true,
       border = "rounded",
       width = temp_width,
       height = temp_height,
