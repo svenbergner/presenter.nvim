@@ -229,14 +229,58 @@ M.start_presentation = function(opts)
       print("No code blocks on this page")
       return
     end
+
+    -- Overwrite the default print function to capture all of the output
+    -- Store the original print function
+    local original_print = print
+
+    -- Table to store the output of the print function
+    local output = { "", "# Code", "", "```" .. block.language }
+    vim.list_extend(output, vim.split(block.code, "\n"))
+    table.insert(output, "```")
+
+    -- Redefine the print function
+    print = function(...)
+      local args = { ... }
+      local message = table.concat(vim.tbl_map(tostring, args), "\t")
+      table.insert(output, message)
+    end
+
     local code = block.code
     local chunk = loadstring(code)
-    if not chunk then
-      print("Failed to load code block")
-      return
-    else 
-      chunk()
-    end
+
+    -- Call the provided code block
+    pcall(function()
+      table.insert(output, "")
+      table.insert(output, "# Output")
+      table.insert(output, "")
+      if not chunk then
+        table.insert(output, "  <<<BROKEN CODE BLOCK>>>")
+      else
+        chunk()
+      end
+    end)
+
+    -- Restore the original print function
+    print = original_print
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    local temp_width = math.floor(vim.o.columns * 0.8)
+    local temp_height = math.floor(vim.o.lines * 0.8)
+    local temp_row = math.floor((vim.o.lines - temp_height) / 2)
+    local temp_col = math.floor((vim.o.columns - temp_width) / 2)
+    vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      style = "minimal",
+      border = "rounded",
+      width = temp_width,
+      height = temp_height,
+      row = temp_row,
+      col = temp_col,
+    })
+
+    vim.bo[buf].filetype = "markdown"
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, output)
   end)
 
   local restore = {
