@@ -1,14 +1,116 @@
 local M = {}
 
+local section_query = vim.treesitter.query.parse("markdown", [[(section) @section]])
+local codeblock_query = vim.treesitter.query.parse("markdown", [[(fenced_code_block) @codeblock]])
+
+-- TODO: This was returning goofy stuff
+-- local language_query =
+--   vim.treesitter.query.parse("markdown", [[(fenced_code_block (info_string (language) @language))]])
+
 local function create_floating_window(config, enter)
+  if enter == nil then
+    enter = false
+  end
+
   local buf = vim.api.nvim_create_buf(false, true) -- No file, scratch buffer
   local win = vim.api.nvim_open_win(buf, enter, config)
 
   return { buf = buf, win = win }
 end
 
-M.setup = function()
-  -- nothing
+--- Default executor for lua code
+--- @param block presenter.Block
+local execute_lua_code = function(block)
+  -- Overwrite the default print function to capture all of the output
+  -- Store the original print function
+  local original_print = print
+
+  local output = {}
+
+  -- Redefine the print function
+  print = function(...)
+    local args = { ... }
+    local message = table.concat(vim.tbl_map(tostring, args), "\t")
+    table.insert(output, message)
+  end
+
+  -- Call the provided code block
+  local chunk = loadstring(block.code)
+  pcall(function()
+    if not chunk then
+      table.insert(output, " <<<BROKEN CODE BLOCK>>>")
+    else
+      chunk()
+    end
+
+    return output
+  end)
+
+  -- Restore the original print function
+  print = original_print
+
+  return output
+end
+
+--- Default executor for Rust code
+---@param block presenter.Block
+local execute_rust_code = function(block)
+  local tempfile = vim.fn.tempname() .. ".rs"
+  local outputfile = tempfile:sub(1, -4)
+  vim.fn.writefile(vim.split(block.code, "\n"), tempfile)
+  local result = vim.system({ "rustc", tempfile, "-o", outputfile }, { text = true }):wait()
+  if result.code ~= 0 then
+    local output = vim.split(result.stderr, "\n")
+    return output
+  end
+  result = vim.system({ outputfile }, { text = true }):wait()
+  return vim.split(result.stdout, "\n")
+end
+
+M.create_system_executor = function(program)
+  return function(block)
+    local tempfile = vim.fn.tempname()
+    vim.fn.writefile(vim.split(block.code, "\n"), tempfile)
+    local result = vim.system({ program, tempfile }, { text = true }):wait()
+    return vim.split(result.stdout, "\n")
+  end
+end
+
+local defaults = {
+  executors = {
+    lua = execute_lua_code,
+    javascript = M.create_system_executor("node"),
+    python = M.create_system_executor("python"),
+    rust = execute_rust_code,
+  },
+}
+
+---@class presenter.Options
+---@field executors table<string, function>: The executors for the different languages
+---@field syntax presenter.SyntaxOptions: The syntax for the plugin
+
+---@class presenter.SyntaxOptions
+---@field comment string?: The prefix for comments, will skip lines that start with this
+---@field stop string?: The stop comment, will stop slide when found. Note: Is a Lua Pattern
+
+---@type presenter.Options
+local options = {
+  syntax = {
+    comment = "%%",
+    stop = "<!%-%-%s*stop%s*%-%->",
+  },
+  executors = {
+    lua = execute_lua_code,
+    javascript = M.create_system_executor("node"),
+    python = M.create_system_executor("python"),
+    rust = execute_rust_code,
+  },
+}
+
+--- Setup the plugin
+--- @param opts presenter.Options
+M.setup = function(opts)
+  options = vim.tbl_deep_extend("force", defaults, opts or {})
 end
 
 ---@class presenter.Slides
@@ -17,66 +119,118 @@ end
 ---@class presenter.Slide
 ---@field title string: The title of the slide
 ---@field body string[]: The body of the slide
----@field blocks presenter.blocks[]: A codeblock inside of a slide
+---@field blocks presenter.Block[]: A codeblock inside of a slide
 
 ---@class presenter.Block
 ---@field language string: The language of the block
 ---@field code string: The code inside of the block
+---@field start_row integer: The start row of the codeblock
+---@field end_row integer: The end row of the codeblock
 
 --- Takes some lines and parses them
 ---@param lines string[]: The lines in the buffer
 ---@return presenter.Slides
 local parse_slides = function(lines)
+  local contents = table.concat(lines, "\n") .. "\n"
+  local parser = vim.treesitter.get_string_parser(contents, "markdown")
+  local root = parser:parse()[1]:root()
+
   local slides = { slides = {} }
-  local current_slide = {
-    title = "",
-    body = {},
-    blocks = {},
-  }
 
-  local separator = "^#"
+  local create_empty_slide = function()
+    return { title = "", body = {}, blocks = {} }
+  end
 
-  for _, line in ipairs(lines) do
-    if line:find(separator) then
-      if #current_slide.title > 0 then
-        table.insert(slides.slides, current_slide)
+  local add_line_to_block = function(slide, line)
+    if not line then
+      return
+    end
+
+    -- Trim trailing whitespace, it can have weird highlighting and whatnot
+    line = line:gsub("%s*$", "")
+    table.insert(slide.body, line)
+  end
+
+  local get_block = function(codeblocks, idx)
+    for _, codeblock in ipairs(codeblocks) do
+      if idx >= codeblock.start_row and idx <= codeblock.end_row then
+        return codeblock
+      end
+    end
+
+    return nil
+  end
+
+  local current_slide = create_empty_slide()
+  for _, node in section_query:iter_captures(root, contents, 0, -1) do
+    if #current_slide.title > 0 then
+      table.insert(slides.slides, current_slide)
+      current_slide = create_empty_slide()
+    end
+
+    local start_row, _, end_row, _ = node:range()
+    current_slide.title = lines[start_row + 1]
+    local codeblocks = vim
+        .iter(codeblock_query:iter_captures(root, contents, start_row, end_row))
+        :map(function(_, n)
+          local s, _, e, _ = n:range()
+          local language = vim.trim(string.sub(lines[s + 1], 4))
+          return {
+            language = language,
+            code = table.concat(vim.list_slice(lines, s + 2, e - 1), "\n"),
+            start_row = s + 1,
+            end_row = e,
+          }
+        end)
+        :totable()
+
+    local comment = options.syntax.comment
+    local stop = options.syntax.stop
+
+    local process_line = function(idx)
+      local line = lines[idx]
+      local block = get_block(codeblocks, idx)
+
+      -- Only do our comments/splits/etc if we are not in a codeblock
+      if not block then
+        -- Skip comment lines
+        if comment and vim.startswith(line, comment) then
+          return
+        end
+
+        -- Split on `stop` comments
+        if stop and line:find(stop) then
+          line = line:gsub(stop, "")
+          add_line_to_block(current_slide, line)
+          table.insert(slides.slides, current_slide)
+          current_slide = vim.deepcopy(current_slide)
+          return
+        end
+
+        return add_line_to_block(current_slide, line)
       end
 
-      current_slide = {
-        title = line:sub(3),
-        body = {},
-        blocks = {},
-      }
-    else
-      table.insert(current_slide.body, line)
+      -- Only add code blocks to the current slide if we have
+      -- actually reached them (this could not happen because of stop comments)
+      if idx == block.start_row then
+        table.insert(current_slide.blocks, block)
+      end
+
+      -- GIVE ME THE CODE AND GIVE IT TO ME RAW
+      add_line_to_block(current_slide, lines[idx])
+    end
+
+    -- Process the lines: Add one for row->line, add one to skip the header
+    local start_of_section = start_row + 2
+    for idx = start_of_section, end_row do
+      process_line(idx)
     end
   end
 
+  -- Add the last slide, won't happen in the loop
+  --  Could probably switch to do-while loop and make Prime happy,
+  --  but that would make me sad.
   table.insert(slides.slides, current_slide)
-
-  for _, slide in ipairs(slides.slides) do
-    local block = {
-      language = nil,
-      code = "",
-    }
-    local inside_block = false
-    for _, line in ipairs(slide.body) do
-      if line:find("^```") then
-        if inside_block then
-          inside_block = false
-          block.code = vim.trim(block.code)
-          table.insert(slide.blocks, block)
-        else
-          inside_block = true
-          block.language = line:sub(4)
-        end
-      else
-        if inside_block then
-          block.code = block.code .. line .. "\n"
-        end
-      end
-    end
-  end
 
   return slides
 end
@@ -165,8 +319,8 @@ M.start_presentation = function(opts)
   local windows = create_window_configurations()
   state.floats.background = create_floating_window(windows.background)
   state.floats.header = create_floating_window(windows.header)
-  state.floats.body = create_floating_window(windows.body, true)
   state.floats.footer = create_floating_window(windows.footer)
+  state.floats.body = create_floating_window(windows.body, true)
 
   foreach_float(function(_, float)
     vim.bo[float.buf].filetype = "markdown"
@@ -202,11 +356,6 @@ M.start_presentation = function(opts)
     set_slide_content(state.current_slide)
   end)
 
-  presenter_keymap('n', '<space>', function()
-    state.current_slide = math.min(state.current_slide + 1, #state.parsed.slides)
-    set_slide_content(state.current_slide)
-  end)
-
   presenter_keymap('n', 'p', function()
     state.current_slide = math.max(state.current_slide - 1, 1)
     set_slide_content(state.current_slide)
@@ -230,39 +379,23 @@ M.start_presentation = function(opts)
       return
     end
 
-    -- Overwrite the default print function to capture all of the output
-    -- Store the original print function
-    local original_print = print
+    local executor = options.executors[block.language]
+    if not executor then
+      print("No valid executor for this language: " .. block.language)
+      return
+    end
 
-    -- Table to store the output of the print function
-    local output = { "", "# Code", "", "```" .. block.language }
+    -- Table to capture print messages
+    local output = { "# Code", "", "```" .. block.language }
     vim.list_extend(output, vim.split(block.code, "\n"))
     table.insert(output, "```")
 
-    -- Redefine the print function
-    print = function(...)
-      local args = { ... }
-      local message = table.concat(vim.tbl_map(tostring, args), "\t")
-      table.insert(output, message)
-    end
-
-    local code = block.code
-    local chunk = loadstring(code)
-
-    -- Call the provided code block
-    pcall(function()
-      table.insert(output, "")
-      table.insert(output, "# Output")
-      table.insert(output, "")
-      if not chunk then
-        table.insert(output, "  <<<BROKEN CODE BLOCK>>>")
-      else
-        chunk()
-      end
-    end)
-
-    -- Restore the original print function
-    print = original_print
+    table.insert(output, "")
+    table.insert(output, "# Output")
+    table.insert(output, "")
+    table.insert(output, "```")
+    vim.list_extend(output, executor(block))
+    table.insert(output, "```")
 
     local buf = vim.api.nvim_create_buf(false, true)
     local temp_width = math.floor(vim.o.columns * 0.8)
@@ -288,6 +421,22 @@ M.start_presentation = function(opts)
     cmdheight = {
       original = vim.o.cmdheight,
       presenting = 0,
+    },
+    guicursor = {
+      original = vim.o.guicursor,
+      present = "n:NormalFloat",
+    },
+    wrap = {
+      original = vim.o.wrap,
+      present = true,
+    },
+    breakindent = {
+      original = vim.o.breakindent,
+      present = true,
+    },
+    breakindentopt = {
+      original = vim.o.breakindentopt,
+      present = "list:-1",
     },
   }
 
