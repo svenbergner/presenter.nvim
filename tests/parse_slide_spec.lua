@@ -12,7 +12,7 @@ describe("presenter.parse_slides", function()
           blocks = {},
         }
       }
-    }, parse({}))
+    }, parse({""}))
   end)
 
   it("should parse an file with one slide", function()
@@ -25,14 +25,14 @@ describe("presenter.parse_slides", function()
         }
       }
     }, parse({
-      "# This is the first slide",
+      "This is the first slide",
       "This is the body"
     }))
   end)
 
   it("should parse an file with one slide and a block", function()
     local results = parse({
-      "# This is the first slide",
+      "This is the first slide",
       "This is the body",
       "```lua",
       "print('hi')",
@@ -52,7 +52,9 @@ describe("presenter.parse_slides", function()
 
     local block = {
       language = "lua",
-      code = "print('hi')"
+      code = "print('hi')",
+      start_row = 3,
+      end_row = 5,
     }
 
     eq(block, slide.blocks[1])
