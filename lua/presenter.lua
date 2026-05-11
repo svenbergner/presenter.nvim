@@ -42,7 +42,13 @@ M.setup = function(opts)
 end
 
 ---@class presenter.Slides
----@fields slides presenter.Slides[]: The slides of the file
+---@field slides presenter.Slide[]: The slides of the file
+---@field metadata presenter.Metadata: Metadata for the presentation
+
+---@class presenter.Metadata
+---@field title string?: The title of the presentation
+---@field presenter string?: The presenter of the presentation
+---@field date string?: The date of the presentation
 
 ---@class presenter.Slide
 ---@field title string: The title of the slide
@@ -59,11 +65,30 @@ end
 ---@param lines string[]: The lines in the buffer
 ---@return presenter.Slides
 local parse_slides = function(lines)
-   local contents = table.concat(lines, "\n") .. "\n"
+   local metadata = {}
+   local content_lines = lines
+
+   if lines[1] == "---" then
+      local parsed_metadata = {}
+      for idx = 2, #lines do
+         if lines[idx] == "---" then
+            metadata = parsed_metadata
+            content_lines = vim.list_slice(lines, idx + 1)
+            break
+         end
+
+         local key, value = lines[idx]:match("^%s*([%w_-]+)%s*:%s*(.-)%s*$")
+         if key and value then
+            parsed_metadata[key] = value
+         end
+      end
+   end
+
+   local contents = table.concat(content_lines, "\n") .. "\n"
    local parser = vim.treesitter.get_string_parser(contents, "markdown")
    local root = parser:parse()[1]:root()
 
-   local slides = { slides = {} }
+   local slides = { slides = {}, metadata = metadata }
 
    local create_empty_slide = function()
       return { title = "", body = {}, blocks = {} }
@@ -97,14 +122,14 @@ local parse_slides = function(lines)
       end
 
       local start_row, _, end_row, _ = node:range()
-      current_slide.title = lines[start_row + 1]
+      current_slide.title = content_lines[start_row + 1]
       local codeblocks = vim.iter(codeblock_query:iter_captures(root, contents, start_row, end_row))
          :map(function(_, n)
             local s, _, e, _ = n:range()
-            local language = vim.trim(string.sub(lines[s + 1], 4))
+            local language = vim.trim(string.sub(content_lines[s + 1], 4))
             return {
                language = language,
-               code = table.concat(vim.list_slice(lines, s + 2, e - 1), "\n"),
+               code = table.concat(vim.list_slice(content_lines, s + 2, e - 1), "\n"),
                start_row = s + 1,
                end_row = e,
             }
@@ -115,7 +140,7 @@ local parse_slides = function(lines)
       local stop = options.syntax.stop
 
       local process_line = function(idx)
-         local line = lines[idx]
+         local line = content_lines[idx]
          local block = get_block(codeblocks, idx)
 
          -- Only do our comments/splits/etc if we are not in a codeblock
@@ -144,7 +169,7 @@ local parse_slides = function(lines)
          end
 
          -- GIVE ME THE CODE AND GIVE IT TO ME RAW
-         add_line_to_block(current_slide, lines[idx])
+         add_line_to_block(current_slide, content_lines[idx])
       end
 
       -- Process the lines: Add one for row->line, add one to skip the header
@@ -160,6 +185,31 @@ local parse_slides = function(lines)
    table.insert(slides.slides, current_slide)
 
    return slides
+end
+
+local format_footer = function(parsed, current_slide, current_file)
+   local metadata = parsed.metadata or {}
+   local parts = {
+      string.format("%d / %d", current_slide, #parsed.slides),
+   }
+
+   if metadata.title and metadata.title ~= "" then
+      table.insert(parts, metadata.title)
+   end
+
+   if metadata.presenter and metadata.presenter ~= "" then
+      table.insert(parts, metadata.presenter)
+   end
+
+   if metadata.date and metadata.date ~= "" then
+      table.insert(parts, metadata.date)
+   end
+
+   if #parts == 1 then
+      table.insert(parts, current_file)
+   end
+
+   return "  " .. table.concat(parts, " | ")
 end
 
 local create_window_configurations = function()
@@ -262,7 +312,7 @@ M.start_presentation = function(opts)
       vim.api.nvim_buf_set_lines(state.floats.header.buf, 0, -1, false, { title })
       vim.api.nvim_buf_set_lines(state.floats.body.buf, 0, -1, false, slide.body)
 
-      local footer = string.format("  %d / %d | %s", state.current_slide, #state.parsed.slides, state.current_file)
+      local footer = format_footer(state.parsed, state.current_slide, state.current_file)
       vim.api.nvim_buf_set_lines(state.floats.footer.buf, 0, -1, false, { footer })
    end
 
@@ -276,12 +326,27 @@ M.start_presentation = function(opts)
       set_slide_content(state.current_slide)
    end)
 
+   presenter_keymap("n", "<Space>", function()
+      state.current_slide = math.min(state.current_slide + 1, #state.parsed.slides)
+      set_slide_content(state.current_slide)
+   end)
+
+   presenter_keymap("n", "<PageDown>", function()
+      state.current_slide = math.min(state.current_slide + 1, #state.parsed.slides)
+      set_slide_content(state.current_slide)
+   end)
+
    presenter_keymap("n", "p", function()
       state.current_slide = math.max(state.current_slide - 1, 1)
       set_slide_content(state.current_slide)
    end)
 
    presenter_keymap("n", "<BS>", function()
+      state.current_slide = math.max(state.current_slide - 1, 1)
+      set_slide_content(state.current_slide)
+   end)
+
+   presenter_keymap("n", "<PageUp>", function()
       state.current_slide = math.max(state.current_slide - 1, 1)
       set_slide_content(state.current_slide)
    end)
@@ -400,5 +465,6 @@ M.start_presentation = function(opts)
 end
 
 M._parse_slides = parse_slides
+M._format_footer = format_footer
 
 return M

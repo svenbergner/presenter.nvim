@@ -10,6 +10,7 @@ describe("presenter.parse_slides", function()
 
   it("should parse an empty file", function()
     eq({
+      metadata = {},
       slides = {
         {
           title = '',
@@ -22,6 +23,7 @@ describe("presenter.parse_slides", function()
 
   it("should parse an file with one slide", function()
     eq({
+      metadata = {},
       slides = {
         {
           title = "This is the first slide",
@@ -67,6 +69,7 @@ describe("presenter.parse_slides", function()
 
   it("should parse multiple heading sections as slides", function()
     eq({
+      metadata = {},
       slides = {
         {
           title = "# First",
@@ -89,6 +92,7 @@ describe("presenter.parse_slides", function()
 
   it("should skip presenter comments outside of code blocks", function()
     eq({
+      metadata = {},
       slides = {
         {
           title = "# Slide",
@@ -121,6 +125,7 @@ describe("presenter.parse_slides", function()
 
   it("should split stop comments into incremental slides", function()
     eq({
+      metadata = {},
       slides = {
         {
           title = "# Slide",
@@ -161,6 +166,7 @@ describe("presenter.parse_slides", function()
     presenter.setup({})
 
     eq({
+      metadata = {},
       slides = {
         {
           title = "# Slide",
@@ -199,5 +205,70 @@ describe("presenter.parse_slides", function()
     eq(2, #results.slides)
     eq({ "First", "" }, results.slides[1].body)
     eq({ "First", "", "Second" }, results.slides[2].body)
+  end)
+
+  it("should parse presentation metadata from a header", function()
+    local results = parse({
+      "---",
+      "title: Parser Deep Dive",
+      "presenter: Sven Bergner",
+      "date: 2026-05-11",
+      "---",
+      "# Intro",
+      "Welcome",
+    })
+
+    eq({
+      title = "Parser Deep Dive",
+      presenter = "Sven Bergner",
+      date = "2026-05-11",
+    }, results.metadata)
+    eq(1, #results.slides)
+    eq("# Intro", results.slides[1].title)
+    eq({ "Welcome" }, results.slides[1].body)
+  end)
+
+  it("should ignore malformed metadata lines in the header", function()
+    local results = parse({
+      "---",
+      "title: Valid title",
+      "this is not metadata",
+      "---",
+      "# Intro",
+    })
+
+    eq({ title = "Valid title" }, results.metadata)
+    eq("# Intro", results.slides[1].title)
+  end)
+
+  it("should not parse an unclosed header as metadata", function()
+    local results = parse({
+      "---",
+      "title: Not metadata",
+      "# Intro",
+    })
+
+    eq({}, results.metadata)
+    eq("---", results.slides[1].title)
+  end)
+end)
+
+describe("presenter footer", function()
+  it("should include presentation metadata when available", function()
+    eq("  2 / 5 | Parser Deep Dive | Sven Bergner | 2026-05-11", presenter._format_footer({
+      metadata = {
+        title = "Parser Deep Dive",
+        presenter = "Sven Bergner",
+        date = "2026-05-11",
+      },
+      slides = { {}, {}, {}, {}, {} },
+    }, 2, "fallback.md"))
+  end)
+
+  it("should fall back to the current file when no metadata is available", function()
+    eq("  1 / 3 | slides.md", presenter._format_footer({
+      metadata = {},
+      slides = { {}, {}, {} },
+    }, 1, "slides.md"))
   end)
 end)

@@ -1,3 +1,9 @@
+---
+  title: Parser Deep Dive
+  presenter: John Doe
+  date: 2026-05-11
+---
+
 # Hello
 
 This is the first slide
