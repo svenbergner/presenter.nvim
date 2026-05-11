@@ -9,6 +9,14 @@ local codeblock_query = vim.treesitter.query.parse("markdown", [[(fenced_code_bl
 --   vim.treesitter.query.parse("markdown", [[(fenced_code_block (info_string (language) @language))]])
 
 local defaults = require("presenter.executors").defaults
+M.create_system_executor = require("presenter.executors").create_system_executor
+
+local default_options = vim.tbl_deep_extend("force", {
+   syntax = {
+      comment = "%%",
+      stop = "<!%-%-%s*stop%s*%-%->",
+   },
+}, defaults)
 
 ---@class presenter.Options
 ---@field executors table<string, function>: The executors for the different languages
@@ -30,7 +38,7 @@ local options = {
 --- Setup the plugin
 --- @param opts presenter.Options
 M.setup = function(opts)
-   options = vim.tbl_deep_extend("force", defaults, opts or {})
+   options = vim.tbl_deep_extend("force", default_options, opts or {})
 end
 
 ---@class presenter.Slides
@@ -332,7 +340,7 @@ M.start_presentation = function(opts)
    local restore = {
       cmdheight = {
          original = vim.o.cmdheight,
-         presenting = 0,
+         present = 0,
       },
       guicursor = {
          original = vim.o.guicursor,
@@ -354,7 +362,7 @@ M.start_presentation = function(opts)
 
    -- Set the options we want for the presentation
    for option, config in pairs(restore) do
-      vim.opt[option] = config.presenting
+      vim.opt[option] = config.present
    end
 
    vim.api.nvim_create_autocmd("BufLeave", {

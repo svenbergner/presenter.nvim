@@ -1,8 +1,13 @@
 ---@diagnostic disable: undefined-field
-local parse = require("presenter")._parse_slides
+local presenter = require("presenter")
+local parse = presenter._parse_slides
 local eq = assert.are.same
 
 describe("presenter.parse_slides", function()
+  before_each(function()
+    presenter.setup({})
+  end)
+
   it("should parse an empty file", function()
     eq({
       slides = {
@@ -58,5 +63,141 @@ describe("presenter.parse_slides", function()
     }
 
     eq(block, slide.blocks[1])
+  end)
+
+  it("should parse multiple heading sections as slides", function()
+    eq({
+      slides = {
+        {
+          title = "# First",
+          body = { "First body" },
+          blocks = {},
+        },
+        {
+          title = "# Second",
+          body = { "Second body" },
+          blocks = {},
+        },
+      }
+    }, parse({
+      "# First",
+      "First body",
+      "# Second",
+      "Second body",
+    }))
+  end)
+
+  it("should skip presenter comments outside of code blocks", function()
+    eq({
+      slides = {
+        {
+          title = "# Slide",
+          body = { "Visible" },
+          blocks = {},
+        },
+      }
+    }, parse({
+      "# Slide",
+      "%% hidden presenter note",
+      "Visible",
+    }))
+  end)
+
+  it("should keep presenter comments inside code blocks", function()
+    local results = parse({
+      "# Slide",
+      "```lua",
+      "%% this is lua input, not a presenter comment",
+      "```",
+    })
+
+    eq({
+      "```lua",
+      "%% this is lua input, not a presenter comment",
+      "```",
+    }, results.slides[1].body)
+    eq("%% this is lua input, not a presenter comment", results.slides[1].blocks[1].code)
+  end)
+
+  it("should split stop comments into incremental slides", function()
+    eq({
+      slides = {
+        {
+          title = "# Slide",
+          body = { "First", "" },
+          blocks = {},
+        },
+        {
+          title = "# Slide",
+          body = { "First", "", "Second" },
+          blocks = {},
+        },
+      }
+    }, parse({
+      "# Slide",
+      "First",
+      "<!-- stop -->",
+      "Second",
+    }))
+  end)
+
+  it("should not split stop comments inside code blocks", function()
+    local results = parse({
+      "# Slide",
+      "```html",
+      "<!-- stop -->",
+      "```",
+    })
+
+    eq(1, #results.slides)
+    eq({
+      "```html",
+      "<!-- stop -->",
+      "```",
+    }, results.slides[1].body)
+  end)
+
+  it("should preserve defaults when setup is called with an empty table", function()
+    presenter.setup({})
+
+    eq({
+      slides = {
+        {
+          title = "# Slide",
+          body = { "Visible" },
+          blocks = {},
+        },
+      }
+    }, parse({
+      "# Slide",
+      "%% hidden presenter note",
+      "Visible",
+    }))
+  end)
+
+  it("should merge custom syntax", function()
+    presenter.setup({
+      syntax = {
+        comment = "//",
+        stop = "^---$",
+      },
+      executors = {
+        custom = function()
+          return { "custom" }
+        end,
+      },
+    })
+
+    local results = parse({
+      "# Slide",
+      "// hidden presenter note",
+      "First",
+      "---",
+      "Second",
+    })
+
+    eq(2, #results.slides)
+    eq({ "First", "" }, results.slides[1].body)
+    eq({ "First", "", "Second" }, results.slides[2].body)
   end)
 end)

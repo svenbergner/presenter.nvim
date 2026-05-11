@@ -1,4 +1,5 @@
 .PHONY: test
 
 test:
-	nvim --headless --noplugin -u scripts/minimal_init.vim -c "PlenaryBustedDirectory tests/ { minimal_init = './scripts/minimal_init.vim' }"
+	@test -d ../plenary.nvim || (echo "Missing test dependency: ../plenary.nvim"; exit 1)
+	nvim --headless --noplugin -i NONE -u scripts/minimal_init.vim -c "PlenaryBustedDirectory tests/ { minimal_init = './scripts/minimal_init.vim' }" -c "qa"
