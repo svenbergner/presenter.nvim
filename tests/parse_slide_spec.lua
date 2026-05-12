@@ -72,12 +72,12 @@ describe("presenter.parse_slides", function()
       metadata = {},
       slides = {
         {
-          title = "# First",
+          title = "First",
           body = { "First body" },
           blocks = {},
         },
         {
-          title = "# Second",
+          title = "Second",
           body = { "Second body" },
           blocks = {},
         },
@@ -90,12 +90,21 @@ describe("presenter.parse_slides", function()
     }))
   end)
 
+  it("should remove markdown heading markers from slide titles", function()
+    local results = parse({
+      "### Deep heading",
+      "Body",
+    })
+
+    eq("Deep heading", results.slides[1].title)
+  end)
+
   it("should skip presenter comments outside of code blocks", function()
     eq({
       metadata = {},
       slides = {
         {
-          title = "# Slide",
+          title = "Slide",
           body = { "Visible" },
           blocks = {},
         },
@@ -128,12 +137,12 @@ describe("presenter.parse_slides", function()
       metadata = {},
       slides = {
         {
-          title = "# Slide",
+          title = "Slide",
           body = { "First", "" },
           blocks = {},
         },
         {
-          title = "# Slide",
+          title = "Slide",
           body = { "First", "", "Second" },
           blocks = {},
         },
@@ -169,7 +178,7 @@ describe("presenter.parse_slides", function()
       metadata = {},
       slides = {
         {
-          title = "# Slide",
+          title = "Slide",
           body = { "Visible" },
           blocks = {},
         },
@@ -224,7 +233,7 @@ describe("presenter.parse_slides", function()
       date = "2026-05-11",
     }, results.metadata)
     eq(1, #results.slides)
-    eq("# Intro", results.slides[1].title)
+    eq("Intro", results.slides[1].title)
     eq({ "Welcome" }, results.slides[1].body)
   end)
 
@@ -238,7 +247,7 @@ describe("presenter.parse_slides", function()
     })
 
     eq({ title = "Valid title" }, results.metadata)
-    eq("# Intro", results.slides[1].title)
+    eq("Intro", results.slides[1].title)
   end)
 
   it("should not parse an unclosed header as metadata", function()

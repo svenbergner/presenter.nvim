@@ -94,6 +94,10 @@ local parse_slides = function(lines)
       return { title = "", body = {}, blocks = {} }
    end
 
+   local parse_title = function(line)
+      return line:gsub("^%s*#+%s+", "")
+   end
+
    local add_line_to_block = function(slide, line)
       if not line then
          return
@@ -122,7 +126,7 @@ local parse_slides = function(lines)
       end
 
       local start_row, _, end_row, _ = node:range()
-      current_slide.title = content_lines[start_row + 1]
+      current_slide.title = parse_title(content_lines[start_row + 1])
       local codeblocks = vim.iter(codeblock_query:iter_captures(root, contents, start_row, end_row))
          :map(function(_, n)
             local s, _, e, _ = n:range()
