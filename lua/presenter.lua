@@ -49,6 +49,10 @@ end
 ---@field title string?: The title of the presentation
 ---@field presenter string?: The presenter of the presentation
 ---@field date string?: The date of the presentation
+---@field figlet string?: Whether to render slide headers through figlet
+---@field figlet_font string?: The figlet font to use for slide headers
+---@field figlet_width string?: The output width passed to figlet
+---@field figlet_kerning string?: Whether to use figlet kerning mode
 
 ---@class presenter.Slide
 ---@field title string: The title of the slide
@@ -216,13 +220,87 @@ local format_footer = function(parsed, current_slide, current_file)
    return "  " .. table.concat(parts, " | ")
 end
 
-local create_window_configurations = function()
+local is_truthy_metadata = function(value)
+   if not value then
+      return false
+   end
+
+   value = tostring(value):lower()
+   return value == "true" or value == "yes" or value == "on" or value == "1"
+end
+
+local should_use_figlet = function(metadata)
+   metadata = metadata or {}
+   if metadata.figlet ~= nil then
+      return is_truthy_metadata(metadata.figlet)
+   end
+
+   return metadata.figlet_font ~= nil or metadata.figlet_width ~= nil or metadata.figlet_kerning ~= nil
+end
+
+local build_figlet_args = function(metadata, title)
+   metadata = metadata or {}
+   local args = { "figlet" }
+
+   if metadata.figlet_font and metadata.figlet_font ~= "" then
+      vim.list_extend(args, { "-f", metadata.figlet_font })
+   end
+
+   if metadata.figlet_width and metadata.figlet_width ~= "" then
+      local width = tonumber(metadata.figlet_width)
+      if width and width > 0 then
+         vim.list_extend(args, { "-w", tostring(math.floor(width)) })
+      end
+   end
+
+   if is_truthy_metadata(metadata.figlet_kerning) then
+      table.insert(args, "-k")
+   end
+
+   table.insert(args, title)
+   return args
+end
+
+local center_lines = function(lines, width)
+   return vim
+      .iter(lines)
+      :map(function(line)
+         local padding = string.rep(" ", math.max(math.floor((width - #line) / 2), 0))
+         return padding .. line
+      end)
+      :totable()
+end
+
+local format_header = function(title, metadata, width, systemlist)
+   if not should_use_figlet(metadata) or (not systemlist and vim.fn.executable("figlet") ~= 1) then
+      return center_lines({ title }, width)
+   end
+
+   local ok, lines = pcall(systemlist or vim.fn.systemlist, build_figlet_args(metadata, title))
+   if not ok or (not systemlist and vim.v.shell_error ~= 0) or not lines or #lines == 0 then
+      return center_lines({ title }, width)
+   end
+
+   while #lines > 0 and lines[#lines] == "" do
+      table.remove(lines)
+   end
+
+   if #lines == 0 then
+      return center_lines({ title }, width)
+   end
+
+   return center_lines(lines, width)
+end
+
+local create_window_configurations = function(header_height)
+   header_height = math.max(header_height or 1, 1)
+
    local width = vim.o.columns
    local height = vim.o.lines
 
-   local header_height = 1 + 2 -- 1 + border
+   local header_window_height = header_height + 2 -- content + border
    local footer_height = 1 -- 1, no border
-   local body_height = height - header_height - footer_height - 3 -- for our own border
+   local body_height = math.max(height - header_window_height - footer_height - 3, 1) -- for our own border
 
    return {
       background = {
@@ -237,7 +315,7 @@ local create_window_configurations = function()
       header = {
          relative = "editor",
          width = width - 8,
-         height = 1,
+         height = header_height,
          style = "minimal",
          border = "rounded",
          col = 4,
@@ -251,7 +329,7 @@ local create_window_configurations = function()
          style = "minimal",
          border = { " ", " ", " ", " ", " ", " ", " ", " " },
          col = 8,
-         row = 4,
+         row = header_window_height + 1,
       },
       footer = {
          relative = "editor",
@@ -296,7 +374,7 @@ M.start_presentation = function(opts)
    state.current_slide = 1
    state.current_file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(opts.bufnr), ":t")
 
-   local windows = create_window_configurations()
+   local windows = create_window_configurations(1)
    state.floats.background = create_floating_window(windows.background)
    state.floats.header = create_floating_window(windows.header)
    state.floats.footer = create_floating_window(windows.footer)
@@ -311,9 +389,12 @@ M.start_presentation = function(opts)
 
       local slide = state.parsed.slides[idx]
 
-      local padding = string.rep(" ", math.floor((width - #slide.title) / 2))
-      local title = padding .. slide.title
-      vim.api.nvim_buf_set_lines(state.floats.header.buf, 0, -1, false, { title })
+      local title = format_header(slide.title, state.parsed.metadata, width - 8)
+      local updated = create_window_configurations(#title)
+      vim.api.nvim_win_set_config(state.floats.header.win, updated.header)
+      vim.api.nvim_win_set_config(state.floats.body.win, updated.body)
+
+      vim.api.nvim_buf_set_lines(state.floats.header.buf, 0, -1, false, title)
       vim.api.nvim_buf_set_lines(state.floats.body.buf, 0, -1, false, slide.body)
 
       local footer = format_footer(state.parsed, state.current_slide, state.current_file)
@@ -455,7 +536,8 @@ M.start_presentation = function(opts)
             return
          end
 
-         local updated = create_window_configurations()
+         local title = format_header(state.parsed.slides[state.current_slide].title, state.parsed.metadata, vim.o.columns - 8)
+         local updated = create_window_configurations(#title)
          foreach_float(function(name, _)
             vim.api.nvim_win_set_config(state.floats[name].win, updated[name])
          end)
@@ -470,5 +552,7 @@ end
 
 M._parse_slides = parse_slides
 M._format_footer = format_footer
+M._format_header = format_header
+M._build_figlet_args = build_figlet_args
 
 return M

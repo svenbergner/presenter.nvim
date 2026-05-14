@@ -10,6 +10,27 @@ MIT License Copyright (c) 2024 Sven Bergner
 Present your markdown files in a slide-like fashion.
 
 ------------------------------------------------------------------------------
+                                                        *Presenter.metadata*
+Presentation metadata
+
+Markdown files can start with a metadata header:
+>markdown
+  ---
+  title: Parser Deep Dive
+  presenter: John Doe
+  date: 2026-05-11
+  figlet: true
+  figlet_font: slant
+  figlet_width: 100
+  figlet_kerning: true
+  ---
+<
+`title`, `presenter`, and `date` are shown in the footer.
+`figlet` enables large slide headers when the `figlet` executable is available.
+`figlet_font`, `figlet_width`, and `figlet_kerning` are optional figlet
+settings.
+
+------------------------------------------------------------------------------
                                                            *Presenter.setup()*
                           `Presenter.setup`({config})
 Module setup

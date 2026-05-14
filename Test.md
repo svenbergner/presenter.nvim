@@ -2,6 +2,10 @@
   title: Parser Deep Dive
   presenter: John Doe
   date: 2026-05-11
+  figlet: true
+  figlet_font: slant
+  figlet_width: 100
+  figlet_kerning: true
 ---
 
 # Hello

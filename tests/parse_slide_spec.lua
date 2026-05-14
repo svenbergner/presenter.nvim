@@ -281,3 +281,40 @@ describe("presenter footer", function()
     }, 1, "slides.md"))
   end)
 end)
+
+describe("presenter header", function()
+  it("should center plain headers when figlet is disabled", function()
+    eq({ "  Intro" }, presenter._format_header("Intro", {}, 10))
+  end)
+
+  it("should build figlet args from presentation metadata", function()
+    eq({
+      "figlet",
+      "-f",
+      "slant",
+      "-w",
+      "100",
+      "-k",
+      "Intro",
+    }, presenter._build_figlet_args({
+      figlet_font = "slant",
+      figlet_width = "100",
+      figlet_kerning = "true",
+    }, "Intro"))
+  end)
+
+  it("should render and center figlet headers when enabled", function()
+    local function systemlist(args)
+      eq({ "figlet", "-f", "standard", "Intro" }, args)
+      return { " ___", "|_ _|", "" }
+    end
+
+    eq({
+      "   ___",
+      "  |_ _|",
+    }, presenter._format_header("Intro", {
+      figlet = "true",
+      figlet_font = "standard",
+    }, 10, systemlist))
+  end)
+end)
