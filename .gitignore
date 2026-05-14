@@ -41,3 +41,4 @@ luac.out
 
 doc/tags
 /nvim.log
+/.deps/

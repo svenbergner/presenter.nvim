@@ -262,10 +262,17 @@ local build_figlet_args = function(metadata, title)
 end
 
 local center_lines = function(lines, width)
+   local max_line_width = vim
+      .iter(lines)
+      :fold(0, function(max_width, line)
+         return math.max(max_width, #line)
+      end)
+
+   local padding = string.rep(" ", math.max(math.floor((width - max_line_width) / 2), 0))
+
    return vim
       .iter(lines)
       :map(function(line)
-         local padding = string.rep(" ", math.max(math.floor((width - #line) / 2), 0))
          return padding .. line
       end)
       :totable()
